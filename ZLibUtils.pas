@@ -56,8 +56,8 @@ type
 const
   ZInvalidOp = 'Invalid operation';
 
-  PROC_BUFFSIZE = 128 * 1024;      {128KiB}
-  STRM_BUFFSIZE = 8 * 1024 * 1024;   {8MiB}
+  PROC_BUFFSIZE = 1024 * 1024;  {1MiB}
+  STRM_BUFFSIZE = 1024 * 1024;  {1MiB}
 
 type
   TZProcessorOutEvent = procedure(Sender: TObject; Data: Pointer; Size: TMemSize) of object;
@@ -76,7 +76,7 @@ type
     procedure DoOutput(OutSize: TMemSize); virtual;
   public
     procedure Init; virtual;
-    procedure Update(Data: Pointer; Size: uInt); virtual; abstract;
+    procedure Update(const Data; Size: uInt); virtual; abstract;
     procedure Final; virtual;
     property TotalCompressed: UInt64 read fTotalCompressed;
     property TotalUncompressed: UInt64 read fTotalUncompressed;
@@ -99,7 +99,7 @@ type
     constructor Create(CompressionLevel: TZCompressionLevel; StreamType: TZStreamType); overload;
     constructor Create(CompressionLevel: TZCompressionLevel = zclDefault); overload;
     procedure Init; override;
-    procedure Update(Data: Pointer; Size: uInt); override;
+    procedure Update(const Data; Size: uInt); override;
     procedure Final; override;
     property CompressionLevel: TZCompressionLevel read fCompressionLevel;
     property MemLevel: TZMemLevel read fMemLevel;
@@ -114,22 +114,30 @@ type
     constructor Create(WindowBits: int); overload;
     constructor Create(StreamType: TZStreamType = zstDefault); overload;
     procedure Init; override;
-    procedure Update(Data: Pointer; Size: uInt); override;
+    procedure Update(const Data; Size: uInt); override;
     procedure Final; override;
     property WindowBits: int read fWindowBits write fWindowBits;
   end;
-(*
+
+//==============================================================================
+
   TZCustomStream = class(TStream)
   protected
-    fZLibState:   z_stream;
-    fBuffer:      Pointer;
-    fTotalComp:   UInt64;
-    fTotalUncomp: UInt64;
+    fZLibState:         z_stream;
+    fBuffer:            TMemoryBuffer;
+    fTotalCompressed:   UInt64;
+    fTotalUncompressed: UInt64;
+    fOnProgress:        TNotifyEvent;
+    Function GetCompressionRatio: Single;
+    procedure DoProgress; virtual;
   public
     constructor Create;
     destructor Destroy; override;
-    property TotalCompressed: UInt64 read fTotalComp;
-    property TotalUncompressed: UInt64 read fTotalUncomp;  
+    procedure Final; virtual; abstract;
+    property TotalCompressed: UInt64 read fTotalCompressed;
+    property TotalUncompressed: UInt64 read fTotalUncompressed;
+    property CompressionRatio: Single read GetCompressionRatio;
+    property OnProgress: TNotifyEvent read fOnProgress write fOnProgress;
   end;
 
   TZCompressionStream = class(TZCustomStream)
@@ -138,11 +146,7 @@ type
     fMemLevel:          TZMemLevel;
     fStrategy:          TZStrategy;
     fWindowBits:        int;
-    fBufferUsed:        TMemSize;
-    fOutBuffer:         Pointer;
-    fDestination:       TStream;
-    procedure FlushBuffer; virtual;
-    procedure Accumulate(OutSize: uInt); virtual;
+    fDestination:       TStream;    
   public
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int); overload;
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType); overload;
@@ -153,22 +157,18 @@ type
     Function Read(var {%H-}Buffer; {%H-}Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    procedure Final; override;
     property CompressionLevel: TZCompressionLevel read fCompressionLevel;
     property MemLevel: TZMemLevel read fMemLevel;
     property Strategy: TZStrategy read fStrategy;
     property WindowBits: int read fWindowBits;
   end;
-*)
-(*
-  TZDecompressionStream = class(TZCustomStream);
+
+  TZDecompressionStream = class(TZCustomStream)
   protected
-    fBuffer:        Pointer;
-    fBufferUsed:    TMemSize;
+    fWindowBits:    int;
     fSource:        TStream;
-    fDecompressor:  TZDecompressor;
-    Function GetWindowBits: int;
-    procedure FlushBuffer; override;
-    procedure OutHandler(Sender: TObject; OutBuffer: Pointer; OutSize: TMemSize); override;
+    fTransferOff:   PtrUInt;
   public
     constructor Create(Src: TStream; WindowBits: int); overload;
     constructor Create(Src: TStream; StreamType: TZStreamType = zstDefault); overload;
@@ -176,9 +176,10 @@ type
     Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
-    property WindowBits: int read GetWindowBits;
+    procedure Final; override;
+    property WindowBits: int read fWindowBits;
   end;
-*)
+
 implementation
 
 Function CompressionErrCheck(ErrCode: int; State: z_stream; RaiseDictionaryError: Boolean = True): int;
@@ -315,14 +316,14 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TZCompressor.Update(Data: Pointer; Size: uInt);
+procedure TZCompressor.Update(const Data; Size: uInt);
 var
   OutSize:  TMemSize;
 begin
 If Size > 0 then
   begin
     Inc(fTotalUncompressed,Size);
-    fZLibState.next_in := Data;
+    fZLibState.next_in := @Data;
     fZLibState.avail_in := Size;
     repeat
       fZLibState.next_out := fOutBuffer.Memory;
@@ -387,13 +388,12 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TZDecompressor.Update(Data: Pointer; Size: uInt);
+procedure TZDecompressor.Update(const Data; Size: uInt);
 var
   ResultCode: int;
   OutSize:    TMemSize;
 begin
-Inc(fTotalCompressed,Size);
-fZLibState.next_in := Data;
+fZLibState.next_in := @Data;
 fZLibState.avail_in := Size;
 repeat
   fZLibState.next_out := fOutBuffer.Memory;
@@ -403,6 +403,7 @@ repeat
   Inc(fTotalUncompressed,OutSize);
   DoOutput(OutSize);
 until (ResultCode = Z_STREAM_END) or (fZLibState.avail_in <= 0);
+Inc(fTotalCompressed,Size - fZLibState.avail_in);
 end;
 
 //------------------------------------------------------------------------------
@@ -416,45 +417,45 @@ end;
 //------------------------------------------------------------------------------
 //==============================================================================
 //------------------------------------------------------------------------------
-(*
+
+Function TZCustomStream.GetCompressionRatio: Single;
+begin
+If fTotalCompressed <> 0 then
+  Result := fTotalUncompressed / fTotalCompressed
+else
+  Result := 0.0;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCustomStream.DoProgress;
+begin
+If Assigned(fOnProgress) then
+  fOnProgress(Self);
+end;
+
+//==============================================================================
+
 constructor TZCustomStream.Create;
 begin
 inherited;
 FillChar(fZLibState,SizeOf(fZLibState),0);
-GetMem(fBuffer,STRM_BUFFSIZE);
-fTotalComp := 0;
-fTotalUncomp := 0;
+GetBuffer(fBuffer,STRM_BUFFSIZE);
+fTotalCompressed := 0;
+fTotalUncompressed := 0;
 end;
 
 //------------------------------------------------------------------------------
 
 destructor TZCustomStream.Destroy;
 begin
-FreeMem(fBuffer,STRM_BUFFSIZE);
+FreeBuffer(fBuffer);
 inherited;
 end;
 
 //------------------------------------------------------------------------------
 //==============================================================================
 //------------------------------------------------------------------------------
-
-procedure TZCompressionStream.FlushBuffer;
-begin
-fDestination.WriteBuffer(fBuffer^,fBufferUsed);
-fBufferUsed := 0;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TZCompressionStream.Accumulate(OutSize: uInt);
-begin
-If (fBufferUsed + OutSize) > STRM_BUFFSIZE then
-  FlushBuffer;
-Move(fOutBuffer^,Pointer(PtrUInt(fBuffer) + fBufferUsed)^,OutSize);
-Inc(fBufferUsed,OutSize);
-end;
-
-//==============================================================================
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int);
 begin
@@ -463,26 +464,15 @@ fCompressionLevel := CompressionLevel;
 fMemLevel := MemLevel;
 fStrategy := Strategy;
 fWindowBits := WindowBits;
-fBufferUsed := 0;
-GetMem(fOutBuffer,PROC_OUTBUFFSIZE);
 fDestination := Dest;
-CompErrCheck(deflateInit2(@fZLibState,Ord(fCompressionLevel),Z_DEFLATED,fWindowBits,Ord(fMemLevel),Ord(fStrategy)),fZLibState);
+CompressionErrCheck(deflateInit2(@fZLibState,Ord(fCompressionLevel),Z_DEFLATED,fWindowBits,Ord(fMemLevel),Ord(fStrategy)),fZLibState);
 end;
 
 //------------------------------------------------------------------------------
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType);
-var
-  wbits:  int;
 begin
-case StreamType of
-  zstZLib:  wbits := WBITS_ZLIB;
-  zstGZip:  wbits := WBITS_GZIP;
-  zstRaw:   wbits := WBITS_RAW;
-else
-  raise EZError.CreateFmt('TZCompressor.Create: Unknown stream type (%d).',[Ord(StreamType)]);
-end;
-Create(Dest,CompressionLevel,MemLevel,Strategy,wbits);
+Create(Dest,CompressionLevel,MemLevel,Strategy,GetStreamTypeWBits(StreamType));
 end;
 
 //------------------------------------------------------------------------------
@@ -495,17 +485,8 @@ end;
 //------------------------------------------------------------------------------
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType);
-var
-  wbits:  int;
 begin
-case StreamType of
-  zstZLib:  wbits := WBITS_ZLIB;
-  zstGZip:  wbits := WBITS_GZIP;
-  zstRaw:   wbits := WBITS_RAW;
-else
-  raise EZError.CreateFmt('TZCompressor.Create: Unknown stream type (%d).',[Ord(StreamType)]);
-end;
-Create(Dest,CompressionLevel,zmlDefault,zsDefault,wbits);
+Create(Dest,CompressionLevel,zmlDefault,zsDefault,GetStreamTypeWBits(StreamType));
 end;
 
 //------------------------------------------------------------------------------
@@ -518,27 +499,12 @@ end;
 //------------------------------------------------------------------------------
 
 destructor TZCompressionStream.Destroy;
-var
-  ResultCode: int;
-  OutSize:    TMemSize;
 begin
 try
-  // flush what is left in zlib internal state
-  fZLibState.next_in := nil;
-  fZLibState.avail_in := 0;
-  repeat
-    fZLibState.next_out := fOutBuffer;
-    fZLibState.avail_out := uInt(PROC_OUTBUFFSIZE);
-    ResultCode := CompErrCheck(deflate(@fZLibState,Z_FINISH),fZLibState);
-    OutSize := TMemSize(PROC_OUTBUFFSIZE - TMemSize(fZLibState.avail_out));
-    Inc(fTotalComp,OutSize);
-    Accumulate(OutSize);
-  until ResultCode = Z_STREAM_END;
+  Final;
 finally
-  CompErrCheck(deflateEnd(@fZLibState),fZLibState);
+  CompressionErrCheck(deflateEnd(@fZLibState),fZLibState);
 end;
-FlushBuffer;
-FreeMem(fOutBuffer,PROC_OUTBUFFSIZE);
 inherited;
 end;
 
@@ -556,11 +522,25 @@ end;
 
 Function TZCompressionStream.Write(const Buffer; Count: LongInt): LongInt;
 var
-  ResultCode: int;
-  OutSize:    TMemSize;
+  OutSize:  TMemSize;
 begin
-//fCompressor.Update(@Buffer,uInt(Count));
-//Result := Count;
+If Count > 0 then
+  begin
+    Inc(fTotalUncompressed,Count);
+    fZLibState.next_in := @Buffer;
+    fZLibState.avail_in := Count;
+    repeat
+      fZLibState.next_out := fBuffer.Memory;
+      fZLibState.avail_out := uInt(fBuffer.Size);
+      CompressionErrCheck(deflate(@fZLibState,Z_NO_FLUSH),fZLibState);
+      OutSize := TMemSize(fBuffer.Size - TMemSize(fZLibState.avail_out));
+      Inc(fTotalCompressed,OutSize);
+      fDestination.WriteBuffer(fBuffer.Memory^,OutSize);
+    until fZLibState.avail_in <= 0;
+    Result := Count - LongInt(fZLibState.avail_in);
+  end
+else Result := 0;
+DoProgress;
 end;
 
 //------------------------------------------------------------------------------
@@ -568,9 +548,126 @@ end;
 Function TZCompressionStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
 begin
 If (Origin = soCurrent) and (Offset = 0) then
-  Result := fTotalUncomp
+  Result := fTotalUncompressed
 else
   raise EZCompressionError.Create('TZCompressionStream.Seek: ' + ZInvalidOp);
 end;
-*)
+
+//------------------------------------------------------------------------------
+
+procedure TZCompressionStream.Final;
+var
+  ResultCode: int;
+  OutSize:    TMemSize;
+begin
+fZLibState.next_in := nil;
+fZLibState.avail_in := 0;
+repeat
+  fZLibState.next_out := fBuffer.Memory;
+  fZLibState.avail_out := uInt(fBuffer.Size);
+  ResultCode := CompressionErrCheck(deflate(@fZLibState,Z_FINISH),fZLibState);
+  OutSize := TMemSize(fBuffer.Size - TMemSize(fZLibState.avail_out));
+  Inc(fTotalCompressed,OutSize);
+  fDestination.WriteBuffer(fBuffer.Memory^,OutSize);
+until ResultCode = Z_STREAM_END;
+end;
+
+//------------------------------------------------------------------------------
+//==============================================================================
+//------------------------------------------------------------------------------
+
+constructor TZDecompressionStream.Create(Src: TStream; WindowBits: int);
+begin
+inherited Create;
+fBuffer.Data := 0;
+fWindowBits := WindowBits;
+fSource := Src;
+fTransferOff := 0;
+DecompressionErrCheck(inflateInit2(@fZLibState,fWindowBits),fZLibState);
+end;
+
+//------------------------------------------------------------------------------
+
+constructor TZDecompressionStream.Create(Src: TStream; StreamType: TZStreamType = zstDefault);
+begin
+Create(Src,GetStreamTypeWBits(StreamType));
+end;
+
+//------------------------------------------------------------------------------
+
+destructor TZDecompressionStream.Destroy;
+begin
+try
+  Final;
+finally
+  DecompressionErrCheck(inflateEnd(@fZLibState),fZLibState);
+end;
+inherited;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionStream.Read(var Buffer; Count: LongInt): LongInt;
+var
+  ResultCode: int;
+begin
+If Count > 0 then
+  begin
+    fZLibState.next_out := @Buffer;
+    fZLibState.avail_out := uInt(Count);
+    repeat
+      If (fBuffer.Data > 0) and (fTransferOff > 0) then
+        begin
+          fZLibState.next_in := Pointer(PtrUInt(fBuffer.Memory) + fTransferOff);
+          fZLibState.avail_in := uInt(PtrUInt(fBuffer.Data) - fTransferOff);
+        end
+      else
+        begin
+          fZLibState.next_in := fBuffer.Memory;
+          fBuffer.Data := fSource.Read(fBuffer.Memory^,fBuffer.Size);
+          fZLibState.avail_in := uInt(fBuffer.Data);
+        end;
+      ResultCode := DecompressionErrCheck(inflate(@fZLibState,Z_NO_FLUSH),fZLibState,True);
+      If fZLibState.avail_in > 0 then
+        fTransferOff := PtrUInt(fBuffer.Data) - PtrUInt(fZLibState.avail_in)
+      else
+        fTransferOff := 0;
+      Inc(fTotalCompressed,PtrUInt(fBuffer.Data) - fTransferOff - PtrUInt(fZLibState.avail_in));
+    until (ResultCode = Z_STREAM_END) or (fZLibState.avail_out <= 0);
+    Result := Count - LongInt(fZLibState.avail_out);
+    Inc(fTotalUncompressed,Result);
+  end
+else Result := 0;
+DoProgress;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionStream.Write(const Buffer; Count: LongInt): LongInt;
+begin
+{$IFDEF FPC}
+Result := 0;
+{$ENDIf}
+raise EZCompressionError.Create('TZDecompressionStream.Write: ' + ZInvalidOp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+begin
+If (Origin = soCurrent) and (Offset = 0) then
+  Result := fSource.Position
+else If (Origin = soBeginning) and (Offset = 0) and (fSource.Position = 0) then
+  Result := 0
+else
+  raise EZCompressionError.Create('TZDecompressionStream.Seek: ' + ZInvalidOp);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZDecompressionStream.Final;
+begin
+// nothing to do here
+end;
+
 end.
