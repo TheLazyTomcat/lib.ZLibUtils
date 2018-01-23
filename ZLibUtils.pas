@@ -58,6 +58,7 @@ const
 
   PROC_BUFFSIZE = 1024 * 1024;  {1MiB}
   STRM_BUFFSIZE = 1024 * 1024;  {1MiB}
+  BUFF_BUFFSIZE = 1024 * 1024;  {1MiB}
 
 type
   TZProcessorOutEvent = procedure(Sender: TObject; Data: Pointer; Size: TMemSize) of object;
@@ -76,7 +77,7 @@ type
     procedure DoOutput(OutSize: TMemSize); virtual;
   public
     procedure Init; virtual;
-    procedure Update(const Data; Size: uInt); virtual; abstract;
+    Function Update(const Data; Size: uInt): uInt; virtual; abstract;
     procedure Final; virtual;
     property TotalCompressed: UInt64 read fTotalCompressed;
     property TotalUncompressed: UInt64 read fTotalUncompressed;
@@ -99,7 +100,7 @@ type
     constructor Create(CompressionLevel: TZCompressionLevel; StreamType: TZStreamType); overload;
     constructor Create(CompressionLevel: TZCompressionLevel = zclDefault); overload;
     procedure Init; override;
-    procedure Update(const Data; Size: uInt); override;
+    Function Update(const Data; Size: uInt): uInt; override;
     procedure Final; override;
     property CompressionLevel: TZCompressionLevel read fCompressionLevel;
     property MemLevel: TZMemLevel read fMemLevel;
@@ -114,7 +115,7 @@ type
     constructor Create(WindowBits: int); overload;
     constructor Create(StreamType: TZStreamType = zstDefault); overload;
     procedure Init; override;
-    procedure Update(const Data; Size: uInt); override;
+    Function Update(const Data; Size: uInt): uInt; override;
     procedure Final; override;
     property WindowBits: int read fWindowBits write fWindowBits;
   end;
@@ -178,6 +179,86 @@ type
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
     procedure Final; override;
     property WindowBits: int read fWindowBits;
+  end;
+
+//==============================================================================
+
+  TZBufferProgressEvent = procedure(Sender: TObject; Progress: Single) of Object;
+
+  TZCustomBuffer = class
+  protected
+    fFreeResult:        Boolean;
+    fSource:            TMemoryBuffer;
+    fBuffer:            TMemoryBuffer;
+    fResult:            TMemoryBuffer;
+    fTotalCompressed:   UInt64;
+    fTotalUncompressed: UInt64;
+    fOnProgress:        TZBufferProgressEvent;
+    Function GetCompressionRatio: Single;
+    procedure ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize); virtual; abstract;
+    procedure DoProgress; virtual; abstract;
+    procedure ZInit; virtual; abstract;
+    Function ZUpdate: Boolean; virtual; abstract;    
+    procedure ZFinal; virtual; abstract;
+  public
+    constructor Create(Src: TMemoryBuffer);
+    destructor Destroy; override;
+    procedure Process; virtual;
+    property Source: TMemoryBuffer read fSource;
+    property FreeResult: Boolean read fFreeResult write fFreeResult;
+    property Result: TMemoryBuffer read fResult;
+    property ResultMemory: Pointer read fResult.Memory;
+    property ResultSize: TMemSize read fResult.Size;
+    property TotalCompressed: UInt64 read fTotalCompressed;
+    property TotalUncompressed: UInt64 read fTotalUncompressed;
+    property CompressionRatio: Single read GetCompressionRatio;
+    property OnProgress: TZBufferProgressEvent read fOnProgress write fOnProgress;
+  end;
+
+  TZCompressionBuffer = class(TZCustomBuffer)
+  protected
+    fCompressor:        TZCompressor;
+    fCompressionLevel:  TZCompressionLevel;
+    fMemLevel:          TZMemLevel;
+    fStrategy:          TZStrategy;
+    fWindowBits:        int;
+    procedure ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize); override;
+    procedure DoProgress; override;
+    procedure ZInit; override;
+    Function ZUpdate: Boolean; override;
+    procedure ZFinal; override;
+  public
+    constructor Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int); overload;
+    constructor Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType); overload;
+    constructor Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; WindowBits: int); overload;
+    constructor Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType); overload;
+    constructor Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel = zclDefault); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; WindowBits: int); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel = zclDefault); overload;
+    property CompressionLevel: TZCompressionLevel read fCompressionLevel;
+    property MemLevel: TZMemLevel read fMemLevel;
+    property Strategy: TZStrategy read fStrategy;
+    property WindowBits: int read fWindowBits;
+  end;
+
+  TZDecompressionBuffer = class(TZCustomBuffer)
+  protected
+    fDecompressor:  TZDecompressor;
+    fWindowBits:    int;
+    procedure ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize); override;
+    procedure DoProgress; override;
+    procedure ZInit; override;
+    Function ZUpdate: Boolean; override;
+    procedure ZFinal; override;    
+  public
+    constructor Create(Src: TMemoryBuffer; WindowBits: int); overload;
+    constructor Create(Src: TMemoryBuffer; StreamType: TZStreamType = zstDefault); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; WindowBits: int); overload;
+    constructor Create(Src: Pointer; SrcSize: TMemSize; StreamType: TZStreamType = zstDefault); overload;
+    property WindowBits: int read fWindowBits;    
   end;
 
 implementation
@@ -316,7 +397,7 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TZCompressor.Update(const Data; Size: uInt);
+Function TZCompressor.Update(const Data; Size: uInt): uInt;
 var
   OutSize:  TMemSize;
 begin
@@ -333,7 +414,9 @@ If Size > 0 then
       Inc(fTotalCompressed,OutSize);
       DoOutput(OutSize);
     until fZLibState.avail_in <= 0;
-  end;
+    Result := Size - fZLibState.avail_in;
+  end
+else Result := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -388,22 +471,27 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TZDecompressor.Update(const Data; Size: uInt);
+Function TZDecompressor.Update(const Data; Size: uInt): uInt;
 var
   ResultCode: int;
   OutSize:    TMemSize;
 begin
-fZLibState.next_in := @Data;
-fZLibState.avail_in := Size;
-repeat
-  fZLibState.next_out := fOutBuffer.Memory;
-  fZLibState.avail_out := uInt(fOutBuffer.Size);
-  ResultCode := DecompressionErrCheck(inflate(@fZLibState,Z_NO_FLUSH),fZLibState,True);
-  OutSize := TMemSize(fOutBuffer.Size - TMemSize(fZLibState.avail_out));
-  Inc(fTotalUncompressed,OutSize);
-  DoOutput(OutSize);
-until (ResultCode = Z_STREAM_END) or (fZLibState.avail_in <= 0);
-Inc(fTotalCompressed,Size - fZLibState.avail_in);
+If Size > 0 then
+  begin
+    fZLibState.next_in := @Data;
+    fZLibState.avail_in := Size;
+    repeat
+      fZLibState.next_out := fOutBuffer.Memory;
+      fZLibState.avail_out := uInt(fOutBuffer.Size);
+      ResultCode := DecompressionErrCheck(inflate(@fZLibState,Z_NO_FLUSH),fZLibState,True);
+      OutSize := TMemSize(fOutBuffer.Size - TMemSize(fZLibState.avail_out));
+      Inc(fTotalUncompressed,OutSize);
+      DoOutput(OutSize);
+    until (ResultCode = Z_STREAM_END) or (fZLibState.avail_in <= 0);
+    Inc(fTotalCompressed,Size - fZLibState.avail_in);
+    Result := Size - fZLibState.avail_in;
+  end
+else Result := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -468,28 +556,28 @@ fDestination := Dest;
 CompressionErrCheck(deflateInit2(@fZLibState,Ord(fCompressionLevel),Z_DEFLATED,fWindowBits,Ord(fMemLevel),Ord(fStrategy)),fZLibState);
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType);
 begin
 Create(Dest,CompressionLevel,MemLevel,Strategy,GetStreamTypeWBits(StreamType));
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; WindowBits: int);
 begin
 Create(Dest,CompressionLevel,zmlDefault,zsDefault,WindowBits);
 end;
  
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType);
 begin
 Create(Dest,CompressionLevel,zmlDefault,zsDefault,GetStreamTypeWBits(StreamType));
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 constructor TZCompressionStream.Create(Dest: TStream; CompressionLevel: TZCompressionLevel = zclDefault);
 begin
@@ -537,7 +625,7 @@ If Count > 0 then
       Inc(fTotalCompressed,OutSize);
       fDestination.WriteBuffer(fBuffer.Memory^,OutSize);
     until fZLibState.avail_in <= 0;
-    Result := Count - LongInt(fZLibState.avail_in);
+    Result := Count;
   end
 else Result := 0;
 DoProgress;
@@ -586,7 +674,7 @@ fTransferOff := 0;
 DecompressionErrCheck(inflateInit2(@fZLibState,fWindowBits),fZLibState);
 end;
 
-//------------------------------------------------------------------------------
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 constructor TZDecompressionStream.Create(Src: TStream; StreamType: TZStreamType = zstDefault);
 begin
@@ -623,16 +711,17 @@ If Count > 0 then
         end
       else
         begin
-          fZLibState.next_in := fBuffer.Memory;
           fBuffer.Data := fSource.Read(fBuffer.Memory^,fBuffer.Size);
+          fZLibState.next_in := fBuffer.Memory;
           fZLibState.avail_in := uInt(fBuffer.Data);
+          fTransferOff := 0;
         end;
       ResultCode := DecompressionErrCheck(inflate(@fZLibState,Z_NO_FLUSH),fZLibState,True);
+      Inc(fTotalCompressed,PtrUInt(fBuffer.Data) - fTransferOff - PtrUInt(fZLibState.avail_in));
       If fZLibState.avail_in > 0 then
         fTransferOff := PtrUInt(fBuffer.Data) - PtrUInt(fZLibState.avail_in)
       else
         fTransferOff := 0;
-      Inc(fTotalCompressed,PtrUInt(fBuffer.Data) - fTransferOff - PtrUInt(fZLibState.avail_in));
     until (ResultCode = Z_STREAM_END) or (fZLibState.avail_out <= 0);
     Result := Count - LongInt(fZLibState.avail_out);
     Inc(fTotalUncompressed,Result);
@@ -668,6 +757,281 @@ end;
 procedure TZDecompressionStream.Final;
 begin
 // nothing to do here
+end;
+
+//------------------------------------------------------------------------------
+//==============================================================================
+//------------------------------------------------------------------------------
+
+Function TZCustomBuffer.GetCompressionRatio: Single;
+begin
+If fTotalCompressed <> 0 then
+  Result := fTotalUncompressed / fTotalCompressed
+else
+  Result := 0.0;
+end;
+
+//==============================================================================
+
+constructor TZCustomBuffer.Create(Src: TMemoryBuffer);
+begin
+inherited Create;
+fTotalCompressed := 0;
+fTotalUncompressed := 0;
+fFreeResult := True;
+fSource := Src;
+GetBuffer(fBuffer,BUFF_BUFFSIZE);
+end;
+
+//------------------------------------------------------------------------------
+
+destructor TZCustomBuffer.Destroy;
+begin
+FreeBuffer(fBuffer);
+If fFreeResult then
+  FreeBuffer(fResult);
+inherited;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCustomBuffer.Process;
+begin
+If fSource.Size > 0 then
+  begin
+    DoProgress;
+    ZInit;
+    try
+      while ZUpdate do
+        DoProgress;
+    finally
+      ZFinal;
+    end;
+    DoProgress;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+//==============================================================================
+//------------------------------------------------------------------------------
+
+procedure TZCompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize);
+begin
+while (fTotalCompressed + Size) > fResult.Size do
+  ReallocBuffer(fResult,((fResult.Size + (fResult.Size shr 1)) + 255) and not TMemSize(255));
+Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalCompressed)^,Size);
+Inc(fTotalCompressed,Size);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCompressionBuffer.DoProgress;
+begin
+If Assigned(fOnProgress) then
+  begin
+    If fSource.Size <> 0 then
+      fOnProgress(Self,fTotalUncompressed / fSource.Size)
+    else
+      fOnProgress(Self,0.0);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCompressionBuffer.ZInit;
+begin
+GetBuffer(fResult,Trunc(fSource.Size * 1.1));
+fCompressor := TZCompressor.Create(fCompressionLevel,fMemLevel,fStrategy,fWindowBits);
+fCompressor.OnOutputEvent := ProcessorHandler;
+fCompressor.Init;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZCompressionBuffer.ZUpdate: Boolean;
+var
+  Size:       TMemSize;
+  Processed:  TMemSize;
+begin
+If (fTotalUncompressed + BUFF_BUFFSIZE) > fSource.Size then
+  Size := fSource.Size - TMemSize(fTotalUncompressed)
+else
+  Size := BUFF_BUFFSIZE;
+Processed := fCompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalUncompressed)^,Size);
+Inc(fTotalUncompressed,Processed);
+Result := (Processed >= Size) and (TMemSize(fTotalUncompressed) < fSource.Size);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCompressionBuffer.ZFinal;
+begin
+fCompressor.Final;
+fCompressor.Free;
+ReallocBuffer(fResult,fTotalCompressed);
+end;
+
+//==============================================================================
+
+constructor TZCompressionBuffer.Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int);
+begin
+inherited Create(Src);
+fCompressionLevel := CompressionLevel;
+fMemLevel := MemLevel;
+fStrategy := Strategy;
+fWindowBits := WindowBits;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType);
+begin
+Create(Src,CompressionLevel,MemLevel,Strategy,GetStreamTypeWBits(StreamType));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; WindowBits: int);
+begin
+Create(Src,CompressionLevel,zmlDefault,zsDefault,WindowBits);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType);
+begin
+Create(Src,CompressionLevel,zmlDefault,zsDefault,GetStreamTypeWBits(StreamType));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: TMemoryBuffer; CompressionLevel: TZCompressionLevel = zclDefault);
+begin
+Create(Src,CompressionLevel,zmlDefault,zsDefault,zstDefault);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int);
+begin
+Create(BuildBuffer(Src,SrcSize),CompressionLevel,MemLevel,Strategy,WindowBits);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType);
+begin
+Create(BuildBuffer(Src,SrcSize),CompressionLevel,MemLevel,Strategy,GetStreamTypeWBits(StreamType));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; WindowBits: int);
+begin
+Create(BuildBuffer(Src,SrcSize),CompressionLevel,zmlDefault,zsDefault,WindowBits);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType);
+begin
+Create(BuildBuffer(Src,SrcSize),CompressionLevel,zmlDefault,zsDefault,GetStreamTypeWBits(StreamType));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZCompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; CompressionLevel: TZCompressionLevel = zclDefault);
+begin
+Create(BuildBuffer(Src,SrcSize),CompressionLevel,zmlDefault,zsDefault,zstDefault);
+end;
+
+//------------------------------------------------------------------------------
+//==============================================================================
+//------------------------------------------------------------------------------
+
+procedure TZDecompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize);
+begin
+while (fTotalUncompressed + Size) > fResult.Size do
+  ReallocBuffer(fResult,((fResult.Size * 2) + 255) and not TMemSize(255));
+Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalUncompressed)^,Size);
+Inc(fTotalUncompressed,Size);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZDecompressionBuffer.DoProgress;
+begin
+If Assigned(fOnProgress) then
+  begin
+    If fSource.Size <> 0 then
+      fOnProgress(Self,fTotalCompressed / fSource.Size)
+    else
+      fOnProgress(Self,0.0);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZDecompressionBuffer.ZInit;
+begin
+GetBuffer(fResult,fSource.Size * 2);
+fDecompressor := TZDecompressor.Create(fWindowBits);
+fDecompressor.OnOutputEvent := ProcessorHandler;
+fDecompressor.Init;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionBuffer.ZUpdate: Boolean;
+var
+  Size:       TMemSize;
+  Processed:  TMemSize;
+begin
+If (fTotalCompressed + BUFF_BUFFSIZE) > fSource.Size then
+  Size := fSource.Size - TMemSize(fTotalCompressed)
+else
+  Size := BUFF_BUFFSIZE;
+Processed := fDecompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalCompressed)^,Size);
+Inc(fTotalCompressed,Processed);
+Result := (Processed >= Size) and (TMemSize(fTotalCompressed) < fSource.Size);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZDecompressionBuffer.ZFinal;
+begin
+fDecompressor.Final;
+fDecompressor.Free;
+ReallocBuffer(fResult,fTotalUncompressed);
+end;
+
+//==============================================================================
+
+constructor TZDecompressionBuffer.Create(Src: TMemoryBuffer; WindowBits: int);
+begin
+inherited Create(Src);
+fWindowBits := WindowBits;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZDecompressionBuffer.Create(Src: TMemoryBuffer; StreamType: TZStreamType = zstDefault);
+begin
+Create(Src,GetStreamTypeWBits(StreamType));
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZDecompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; WindowBits: int);
+begin
+Create(BuildBuffer(Src,SrcSize),WindowBits);
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+constructor TZDecompressionBuffer.Create(Src: Pointer; SrcSize: TMemSize; StreamType: TZStreamType = zstDefault);
+begin
+Create(BuildBuffer(Src,SrcSize),GetStreamTypeWBits(StreamType));
 end;
 
 end.
