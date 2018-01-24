@@ -15,6 +15,15 @@
 
   Version 1.0.1
 
+  Dependencies:
+    AuxTypes     - github.com/ncs-sniper/Lib.AuxTypes
+    MemoryBuffer - github.com/ncs-sniper/Lib.MemoryBuffer
+  * StrRect      - github.com/ncs-sniper/Lib.StrRect    
+    ZLib         - github.com/ncs-sniper/Bnd.ZLib
+
+  StrRect is required only when dynamically linked zlib is used (see symbol
+  ZLib_Static for details).
+
 ===============================================================================}
 unit ZLibUtils;
 
