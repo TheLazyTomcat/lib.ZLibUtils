@@ -11,9 +11,9 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  ©František Milt 2018-01-23
+  ©František Milt 2018-01-24
 
-  Version 1.0
+  Version 1.0.1
 
 ===============================================================================}
 unit ZLibUtils;
@@ -282,6 +282,7 @@ type
     fResult:            TMemoryBuffer;
     fTotalCompressed:   UInt64;
     fTotalUncompressed: UInt64;
+    fExpctdResultSize:  TMemSize;
     fOnProgress:        TZBufferProgressEvent;
     Function GetCompressionRatio: Single;
     procedure ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize); virtual; abstract;
@@ -301,6 +302,7 @@ type
     property TotalCompressed: UInt64 read fTotalCompressed;
     property TotalUncompressed: UInt64 read fTotalUncompressed;
     property CompressionRatio: Single read GetCompressionRatio;
+    property ExpectedResultSize: TMemSize read fExpctdResultSize write fExpctdResultSize;
     property OnProgress: TZBufferProgressEvent read fOnProgress write fOnProgress;
   end;
 
@@ -965,6 +967,7 @@ fTotalUncompressed := 0;
 fFreeResult := True;
 fSource := Src;
 GetBuffer(fBuffer,BUFF_BUFFSIZE);
+fExpctdResultSize := Src.Size;
 end;
 
 //------------------------------------------------------------------------------
@@ -1033,7 +1036,7 @@ end;
 
 procedure TZCompressionBuffer.ZInit;
 begin
-GetBuffer(fResult,Trunc(fSource.Size * 1.1));
+GetBuffer(fResult,fExpctdResultSize);
 fCompressor := TZCompressor.Create(fCompressionLevel,fMemLevel,fStrategy,fWindowBits);
 fCompressor.OnOutputEvent := ProcessorHandler;
 fCompressor.Init;
@@ -1075,6 +1078,7 @@ fCompressionLevel := CompressionLevel;
 fMemLevel := MemLevel;
 fStrategy := Strategy;
 fWindowBits := WindowBits;
+fExpctdResultSize := Trunc(fSource.Size * 1.1);
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1178,7 +1182,7 @@ end;
 
 procedure TZDecompressionBuffer.ZInit;
 begin
-GetBuffer(fResult,fSource.Size * 2);
+GetBuffer(fResult,fExpctdResultSize);
 fDecompressor := TZDecompressor.Create(fWindowBits);
 fDecompressor.OnOutputEvent := ProcessorHandler;
 fDecompressor.Init;
@@ -1217,6 +1221,7 @@ constructor TZDecompressionBuffer.Create(Src: TMemoryBuffer; WindowBits: int);
 begin
 inherited Create(Src);
 fWindowBits := WindowBits;
+fExpctdResultSize := fSource.Size * 2;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
