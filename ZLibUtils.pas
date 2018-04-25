@@ -29,6 +29,7 @@ unit ZLibUtils;
 
 {$IFDEF FPC}
   {$MODE Delphi}
+  {$DEFINE FPC_DisableWarns}
 {$ENDIF}
 
 {
@@ -48,6 +49,10 @@ uses
   AuxTypes, MemoryBuffer,
   ZLibCommon;
 
+{$IFDEF FPC_DisableWarns}
+  {$WARN 3031 OFF} // Values in enumeration types have to be ascending
+{$ENDIF}
+
 {===============================================================================
     Types, constants and auxiliary classes
 ===============================================================================}
@@ -56,7 +61,7 @@ type
     zclNoCompression   = Z_NO_COMPRESSION,
     zclBestSpeed       = Z_BEST_SPEED,
     zclBestCompression = Z_BEST_COMPRESSION,
-    zclDefault         = Z_DEFAULT_COMPRESSION{%H-},
+    zclDefault         = Z_DEFAULT_COMPRESSION,
     zclLevel0          = 0,
     zclLevel1          = 1,
     zclLevel2          = 2,
@@ -70,7 +75,7 @@ type
 
   TZMemLevel = (
     zmlDefault = DEF_MEM_LEVEL,
-    zmlLevel1  = 1{%H-},
+    zmlLevel1  = 1,
     zmlLevel2  = 2,
     zmlLevel3  = 3,
     zmlLevel4  = 4,
@@ -85,9 +90,9 @@ type
     zsHuffman  = Z_HUFFMAN_ONLY,
     zsRLE      = Z_RLE,
     zsFixed    = Z_FIXED,
-    zsDefault  = Z_DEFAULT_STRATEGY{%H-});
+    zsDefault  = Z_DEFAULT_STRATEGY);
 
-  TZStreamType = (zstZLib,zstGZip,zstRaw,zstDefault = zstZLib{%H-});
+  TZStreamType = (zstZLib,zstGZip,zstRaw,zstDefault = zstZLib);
 
   EZError = class(Exception)
   public
@@ -238,7 +243,7 @@ type
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel; StreamType: TZStreamType); overload;
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel = zclDefault); overload;
     destructor Destroy; override;
-    Function Read(var {%H-}Buffer; {%H-}Count: LongInt): LongInt; override;
+    Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
     procedure Final; override;
@@ -266,7 +271,7 @@ type
     constructor Create(Src: TStream; StreamType: TZStreamType = zstDefault); overload;
     destructor Destroy; override;
     Function Read(var Buffer; Count: LongInt): LongInt; override;
-    Function Write(const {%H-}Buffer; {%H-}Count: LongInt): LongInt; override;
+    Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
     procedure Final; override;
     property WindowBits: int read fWindowBits;
@@ -384,6 +389,12 @@ uses
   ZLibStatic;
 {$ELSE}
   ZLibDynamic;
+{$ENDIF}
+
+{$IFDEF FPC_DisableWarns}
+  {$WARN 4055 OFF} // Conversion between ordinals and pointers is not portable
+  {$WARN 4056 OFF} // Conversion between ordinals and pointers is not portable
+  {$WARN 5024 OFF} // Parameter "$1" not used
 {$ENDIF}
 
 {===============================================================================
@@ -890,7 +901,7 @@ If Count > 0 then
     repeat
       If (fBuffer.Data > 0) and (fTransferOff > 0) then
         begin
-          fZLibState.next_in := {%H-}Pointer({%H-}PtrUInt(fBuffer.Memory) + fTransferOff);
+          fZLibState.next_in := Pointer(PtrUInt(fBuffer.Memory) + fTransferOff);
           fZLibState.avail_in := uInt(PtrUInt(fBuffer.Data) - fTransferOff);
         end
       else
@@ -1024,7 +1035,7 @@ procedure TZCompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer; S
 begin
 while (fTotalCompressed + Size) > fResult.Size do
   ReallocBuffer(fResult,((fResult.Size + (fResult.Size shr 1)) + 255) and not TMemSize(255));
-Move(Data^,{%H-}Pointer({%H-}PtrUInt(fResult.Memory) + fTotalCompressed)^,Size);
+Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalCompressed)^,Size);
 Inc(fTotalCompressed,Size);
 end;
 
@@ -1062,7 +1073,7 @@ If (fTotalUncompressed + BUFF_BUFFSIZE) > fSource.Size then
   Size := fSource.Size - TMemSize(fTotalUncompressed)
 else
   Size := BUFF_BUFFSIZE;
-Processed := fCompressor.Update({%H-}Pointer({%H-}PtrUInt(fSource.Memory) + fTotalUncompressed)^,Size);
+Processed := fCompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalUncompressed)^,Size);
 Inc(fTotalUncompressed,Processed);
 Result := (Processed >= Size) and (TMemSize(fTotalUncompressed) < fSource.Size);
 end;
@@ -1170,7 +1181,7 @@ procedure TZDecompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer;
 begin
 while (fTotalUncompressed + Size) > fResult.Size do
   ReallocBuffer(fResult,((fResult.Size * 2) + 255) and not TMemSize(255));
-Move(Data^,{%H-}Pointer({%H-}PtrUInt(fResult.Memory) + fTotalUncompressed)^,Size);
+Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalUncompressed)^,Size);
 Inc(fTotalUncompressed,Size);
 end;
 
@@ -1208,7 +1219,7 @@ If (fTotalCompressed + BUFF_BUFFSIZE) > fSource.Size then
   Size := fSource.Size - TMemSize(fTotalCompressed)
 else
   Size := BUFF_BUFFSIZE;
-Processed := fDecompressor.Update({%H-}Pointer({%H-}PtrUInt(fSource.Memory) + fTotalCompressed)^,Size);
+Processed := fDecompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalCompressed)^,Size);
 Inc(fTotalCompressed,Processed);
 Result := (Processed >= Size) and (TMemSize(fTotalCompressed) < fSource.Size);
 end;
