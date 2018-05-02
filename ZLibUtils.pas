@@ -17,6 +17,7 @@
 
   Dependencies:
     AuxTypes     - github.com/ncs-sniper/Lib.AuxTypes
+    AuxClasses   - github.com/ncs-sniper/Lib.AuxClasses
     MemoryBuffer - github.com/ncs-sniper/Lib.MemoryBuffer
   * StrRect      - github.com/ncs-sniper/Lib.StrRect    
     ZLib         - github.com/ncs-sniper/Bnd.ZLib
@@ -46,7 +47,7 @@ interface
 
 uses
   SysUtils, Classes,
-  AuxTypes, MemoryBuffer,
+  AuxTypes, AuxClasses, MemoryBuffer,
   ZLibCommon;
 
 {$IFDEF FPC_DisableWarns}
@@ -122,7 +123,7 @@ type
 {===============================================================================
     TZProcessor - class declaration
 ===============================================================================}
-  TZProcessor = class(TObject)
+  TZProcessor = class(TCustomObject)
   protected
     fZLibState:         z_stream;
     fOutBuffer:         TMemoryBuffer;
@@ -288,7 +289,7 @@ type
 {===============================================================================
     TZCustomBuffer - class declaration
 ===============================================================================}
-  TZCustomBuffer = class
+  TZCustomBuffer = class(TCustomObject)
   protected
     fFreeResult:        Boolean;
     fSource:            TMemoryBuffer;
