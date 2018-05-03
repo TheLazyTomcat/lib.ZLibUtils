@@ -11,9 +11,9 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  ©František Milt 2018-04-05
+  ©František Milt 2018-05-03
 
-  Version 1.0.2
+  Version 1.0.3
 
   Dependencies:
     AuxTypes     - github.com/ncs-sniper/Lib.AuxTypes
@@ -109,6 +109,7 @@ const
   PROC_BUFFSIZE = 1024 * 1024;  {1MiB}
   STRM_BUFFSIZE = 1024 * 1024;  {1MiB}
   BUFF_BUFFSIZE = 1024 * 1024;  {1MiB}
+  INTR_BUFFSIZE = 1024 * 1024;  {1MiB}
 
 {-------------------------------------------------------------------------------
 ================================================================================
@@ -247,6 +248,7 @@ type
     Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    Function CompressFrom(Source: TStream): Int64; virtual;
     procedure Final; override;
     property CompressionLevel: TZCompressionLevel read fCompressionLevel;
     property MemLevel: TZMemLevel read fMemLevel;
@@ -274,6 +276,7 @@ type
     Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    Function ExtractTo(Destination: TStream): Int64; virtual;
     procedure Final; override;
     property WindowBits: int read fWindowBits;
   end;
@@ -830,6 +833,25 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function TZCompressionStream.CompressFrom(Source: TStream): Int64;
+var
+  Buffer: TMemoryBuffer;
+begin
+Result := 0;
+GetBuffer(Buffer,INTR_BUFFSIZE);
+try
+  repeat
+    Buffer.Data := Source.Read(Buffer.Memory^,INTR_BUFFSIZE);
+    WriteBuffer(Buffer.Memory^,Buffer.Data);
+    Inc(Result,Buffer.Data);
+  until Buffer.Data < INTR_BUFFSIZE;
+finally
+  FreeBuffer(Buffer);
+end;
+end;
+
+//------------------------------------------------------------------------------
+
 procedure TZCompressionStream.Final;
 var
   ResultCode: int;
@@ -946,6 +968,25 @@ else If (Origin = soBeginning) and (Offset = 0) and (fSource.Position = 0) then
   Result := 0
 else
   raise EZCompressionError.Create('TZDecompressionStream.Seek: ' + ZInvalidOp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionStream.ExtractTo(Destination: TStream): Int64;
+var
+  Buffer: TMemoryBuffer;
+begin
+Result := 0;
+GetBuffer(Buffer,INTR_BUFFSIZE);
+try
+  repeat
+    Buffer.Data := Read(Buffer.Memory^,INTR_BUFFSIZE);
+    Destination.WriteBuffer(Buffer.Memory^,Buffer.Data);
+    Inc(Result,Buffer.Data);
+  until Buffer.Data < INTR_BUFFSIZE;
+finally
+  FreeBuffer(Buffer);
+end;
 end;
 
 //------------------------------------------------------------------------------
