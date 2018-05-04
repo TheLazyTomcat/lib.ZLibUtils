@@ -31,6 +31,7 @@ unit ZLibUtils;
 {$IFDEF FPC}
   {$MODE Delphi}
   {$DEFINE FPC_DisableWarns}
+  {$MACRO ON}
 {$ENDIF}
 
 {
@@ -51,7 +52,8 @@ uses
   ZLibCommon;
 
 {$IFDEF FPC_DisableWarns}
-  {$WARN 3031 OFF} // Values in enumeration types have to be ascending
+  {$DEFINE FPCDWM}
+  {$DEFINE W3031:={$WARN 3031 OFF}} // Values in enumeration types have to be ascending
 {$ENDIF}
 
 {===============================================================================
@@ -62,7 +64,9 @@ type
     zclNoCompression   = Z_NO_COMPRESSION,
     zclBestSpeed       = Z_BEST_SPEED,
     zclBestCompression = Z_BEST_COMPRESSION,
+  {$IFDEF FPCDWM}{$PUSH}W3031{$ENDIF}
     zclDefault         = Z_DEFAULT_COMPRESSION,
+  {$IFDEF FPCDWM}{$POP}{$ENDIF}
     zclLevel0          = 0,
     zclLevel1          = 1,
     zclLevel2          = 2,
@@ -76,7 +80,9 @@ type
 
   TZMemLevel = (
     zmlDefault = DEF_MEM_LEVEL,
+  {$IFDEF FPCDWM}{$PUSH}W3031{$ENDIF}
     zmlLevel1  = 1,
+  {$IFDEF FPCDWM}{$POP}{$ENDIF}
     zmlLevel2  = 2,
     zmlLevel3  = 3,
     zmlLevel4  = 4,
@@ -91,9 +97,13 @@ type
     zsHuffman  = Z_HUFFMAN_ONLY,
     zsRLE      = Z_RLE,
     zsFixed    = Z_FIXED,
+  {$IFDEF FPCDWM}{$PUSH}W3031{$ENDIF}
     zsDefault  = Z_DEFAULT_STRATEGY);
+  {$IFDEF FPCDWM}{$POP}{$ENDIF}
 
+{$IFDEF FPCDWM}{$PUSH}W3031{$ENDIF}
   TZStreamType = (zstZLib,zstGZip,zstRaw,zstDefault = zstZLib);
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
   EZError = class(Exception)
   public
