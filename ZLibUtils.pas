@@ -406,9 +406,10 @@ uses
 {$ENDIF}
 
 {$IFDEF FPC_DisableWarns}
-  {$WARN 4055 OFF} // Conversion between ordinals and pointers is not portable
-  {$WARN 4056 OFF} // Conversion between ordinals and pointers is not portable
-  {$WARN 5024 OFF} // Parameter "$1" not used
+  {$DEFINE FPCDWM}
+  {$DEFINE W4055:={$WARN 4055 OFF}} // Conversion between ordinals and pointers is not portable
+  {$DEFINE W4056:={$WARN 4056 OFF}} // Conversion between ordinals and pointers is not portable
+  {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
 {$ENDIF}
 
 {===============================================================================
@@ -798,6 +799,7 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 Function TZCompressionStream.Read(var Buffer; Count: LongInt): LongInt;
 begin
 {$IFDEF FPC}
@@ -805,6 +807,7 @@ Result := 0;
 {$ENDIf}
 raise EZCompressionError.Create('TZCompressionStream.Read: ' + ZInvalidOp);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -934,7 +937,9 @@ If Count > 0 then
     repeat
       If (fBuffer.Data > 0) and (fTransferOff > 0) then
         begin
+        {$IFDEF FPCDWM}{$PUSH}W4055{$ENDIF}
           fZLibState.next_in := Pointer(PtrUInt(fBuffer.Memory) + fTransferOff);
+        {$IFDEF FPCDWM}{$POP}{$ENDIF}
           fZLibState.avail_in := uInt(PtrUInt(fBuffer.Data) - fTransferOff);
         end
       else
@@ -960,6 +965,7 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 Function TZDecompressionStream.Write(const Buffer; Count: LongInt): LongInt;
 begin
 {$IFDEF FPC}
@@ -967,6 +973,7 @@ Result := 0;
 {$ENDIf}
 raise EZCompressionError.Create('TZDecompressionStream.Write: ' + ZInvalidOp);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -1083,6 +1090,7 @@ end;
     TZCompressionBuffer - protected methods
 -------------------------------------------------------------------------------}
 
+{$IFDEF FPCDWM}{$PUSH}W4055 W4056 W5024{$ENDIF}
 procedure TZCompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize);
 begin
 while (fTotalCompressed + Size) > fResult.Size do
@@ -1090,6 +1098,7 @@ while (fTotalCompressed + Size) > fResult.Size do
 Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalCompressed)^,Size);
 Inc(fTotalCompressed,Size);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -1125,7 +1134,9 @@ If (fTotalUncompressed + BUFF_BUFFSIZE) > fSource.Size then
   Size := fSource.Size - TMemSize(fTotalUncompressed)
 else
   Size := BUFF_BUFFSIZE;
+{$IFDEF FPCDWM}{$PUSH}W4055 W4056{$ENDIF}
 Processed := fCompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalUncompressed)^,Size);
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 Inc(fTotalUncompressed,Processed);
 Result := (Processed >= Size) and (TMemSize(fTotalUncompressed) < fSource.Size);
 end;
@@ -1229,6 +1240,7 @@ end;
     TZDecompressionBuffer - protected methods
 -------------------------------------------------------------------------------}
 
+{$IFDEF FPCDWM}{$PUSH}W4055 W4056 W5024{$ENDIF}
 procedure TZDecompressionBuffer.ProcessorHandler(Sender: TObject; Data: Pointer; Size: TMemSize);
 begin
 while (fTotalUncompressed + Size) > fResult.Size do
@@ -1236,6 +1248,7 @@ while (fTotalUncompressed + Size) > fResult.Size do
 Move(Data^,Pointer(PtrUInt(fResult.Memory) + fTotalUncompressed)^,Size);
 Inc(fTotalUncompressed,Size);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -1271,7 +1284,9 @@ If (fTotalCompressed + BUFF_BUFFSIZE) > fSource.Size then
   Size := fSource.Size - TMemSize(fTotalCompressed)
 else
   Size := BUFF_BUFFSIZE;
+{$IFDEF FPCDWM}{$PUSH}W4055 W4056{$ENDIF}
 Processed := fDecompressor.Update(Pointer(PtrUInt(fSource.Memory) + fTotalCompressed)^,Size);
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 Inc(fTotalCompressed,Processed);
 Result := (Processed >= Size) and (TMemSize(fTotalCompressed) < fSource.Size);
 end;
