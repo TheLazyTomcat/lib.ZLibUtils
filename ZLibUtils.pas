@@ -133,16 +133,6 @@ type
   EZCompressionError   = class(EZError);
   EZDecompressionError = class(EZError);
 
-//------------------------------------------------------------------------------
-
-const
-  ZInvalidOp = 'Invalid operation';
-
-  PROC_BUFFSIZE = 1024 * 1024;  {1MiB}
-  STRM_BUFFSIZE = 1024 * 1024;  {1MiB}
-  BUFF_BUFFSIZE = 1024 * 1024;  {1MiB}
-  INTR_BUFFSIZE = 1024 * 1024;  {1MiB}
-
 {-------------------------------------------------------------------------------
 ================================================================================
                                   TZProcessor
@@ -437,6 +427,14 @@ uses
   {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
 {$ENDIF}
 
+const
+  ZInvalidOp = 'Invalid operation.';
+
+  ZU_PROC_BUFFSIZE = 1024 * 1024;  {1MiB}
+  ZU_STRM_BUFFSIZE = 1024 * 1024;  {1MiB}
+  ZU_BUFF_BUFFSIZE = 1024 * 1024;  {1MiB}
+  ZU_INTR_BUFFSIZE = 1024 * 1024;  {1MiB}
+
 {===============================================================================
     Auxiliary functions
 ===============================================================================}
@@ -522,7 +520,7 @@ end;
 procedure TZProcessor.Init;
 begin
 FillChar(fZLibState,SizeOf(fZLibState),0);
-BufferGet(fOutBuffer,PROC_BUFFSIZE);
+BufferGet(fOutBuffer,ZU_PROC_BUFFSIZE);
 fTotalCompressed := 0;
 fTotalUncompressed := 0;
 end;
@@ -747,7 +745,7 @@ constructor TZCustomStream.Create;
 begin
 inherited;
 FillChar(fZLibState,SizeOf(fZLibState),0);
-BufferGet(fBuffer,STRM_BUFFSIZE);
+BufferGet(fBuffer,ZU_STRM_BUFFSIZE);
 fTotalCompressed := 0;
 fTotalUncompressed := 0;
 end;
@@ -880,13 +878,13 @@ var
 begin
 Result := 0;
 BufferInit(Buffer);
-BufferGet(Buffer,INTR_BUFFSIZE);
+BufferGet(Buffer,ZU_INTR_BUFFSIZE);
 try
   repeat
-    BytesRead := Source.Read(BufferMemory(Buffer)^,INTR_BUFFSIZE);
+    BytesRead := Source.Read(BufferMemory(Buffer)^,ZU_INTR_BUFFSIZE);
     WriteBuffer(BufferMemory(Buffer)^,BytesRead);
     Inc(Result,Int64(BytesRead));
-  until BytesRead < INTR_BUFFSIZE;
+  until BytesRead < ZU_INTR_BUFFSIZE;
 finally
   BufferFree(Buffer);
 end;
@@ -1034,13 +1032,13 @@ var
 begin
 Result := 0;
 BufferInit(Buffer);
-BufferGet(Buffer,INTR_BUFFSIZE);
+BufferGet(Buffer,ZU_INTR_BUFFSIZE);
 try
   repeat
-    BytesRead := Read(BufferMemory(Buffer)^,INTR_BUFFSIZE);
+    BytesRead := Read(BufferMemory(Buffer)^,ZU_INTR_BUFFSIZE);
     Destination.WriteBuffer(BufferMemory(Buffer)^,BytesRead);
     Inc(Result,Int64(BytesRead));
-  until BytesRead < INTR_BUFFSIZE;
+  until BytesRead < ZU_INTR_BUFFSIZE;
 finally
   BufferFree(Buffer);
 end;
@@ -1082,7 +1080,7 @@ constructor TZCustomBuffer.Create(Src: TMemoryBuffer);
 begin
 inherited Create;
 fSource := Src;
-BufferGet(fBuffer,BUFF_BUFFSIZE);
+BufferGet(fBuffer,ZU_BUFF_BUFFSIZE);
 fFreeResult := True;
 fTotalCompressed := 0;
 fTotalUncompressed := 0;
@@ -1173,10 +1171,10 @@ var
   Size:       TMemSize;
   Processed:  TMemSize;
 begin
-If (fTotalUncompressed + BUFF_BUFFSIZE) > BufferSize(fSource) then
+If (fTotalUncompressed + ZU_BUFF_BUFFSIZE) > BufferSize(fSource) then
   Size := BufferSize(fSource) - TMemSize(fTotalUncompressed)
 else
-  Size := BUFF_BUFFSIZE;
+  Size := ZU_BUFF_BUFFSIZE;
 {$IFDEF FPCDWM}{$PUSH}W4055{$ENDIF}
 Processed := TMemSize(fCompressor.Update(Pointer(PtrUInt(BufferMemory(fSource)) + PtrUInt(fTotalUncompressed))^,uInt(Size)));
 {$IFDEF FPCDWM}{$POP}{$ENDIF}
@@ -1326,10 +1324,10 @@ var
   Size:       TMemSize;
   Processed:  TMemSize;
 begin
-If (fTotalCompressed + BUFF_BUFFSIZE) > BufferSize(fSource) then
+If (fTotalCompressed + ZU_BUFF_BUFFSIZE) > BufferSize(fSource) then
   Size := BufferSize(fSource) - TMemSize(fTotalCompressed)
 else
-  Size := BUFF_BUFFSIZE;
+  Size := ZU_BUFF_BUFFSIZE;
 {$IFDEF FPCDWM}{$PUSH}W4055{$ENDIF}
 Processed := fDecompressor.Update(Pointer(PtrUInt(BufferMemory(fSource)) + PtrUInt(fTotalCompressed))^,uInt(Size));
 {$IFDEF FPCDWM}{$POP}{$ENDIF}
