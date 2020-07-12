@@ -11,7 +11,7 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  Version 1.0.5 (2020-07-12)
+  Version 1.0.6 (2020-07-12)
 
   Last change 2020-07-12
 
@@ -59,7 +59,7 @@ unit ZLibUtils;
   
   Defined by default.
 }
-{.$DEFINE ZLib_Static}
+{$DEFINE ZLib_Static}
 
 interface
 
@@ -231,6 +231,8 @@ type
     fTotalCompressed:     UInt64;
     fTotalUncompressed:   UInt64;
     fTotalCounter:        UInt64;
+    fUserIntData:         PtrInt;
+    fUserPtrData:         Pointer;
     fOnUpdateEvent:       TNotifyEvent;
     fOnUpdateCallback:    TNotifyCallback;
     fOnProgressEvent:     TFloatEvent;
@@ -246,6 +248,9 @@ type
     property TotalCompressed: UInt64 read fTotalCompressed;
     property TotalUncompressed: UInt64 read fTotalUncompressed;
     property CompressionRatio: Double read GetCompressionRatio;
+    property UserIntData: PtrInt read fUserIntData write fUserIntData;
+    property UserPtrData: Pointer read fUserPtrData write fUserPtrData;
+    property UserData: PtrInt read fUserIntData write fUserIntData;    
   {
     OnUpdate* is called everytime the TotalCompressed (decompression stream) or
     TotalUncompressed (compression stream) is changed.
