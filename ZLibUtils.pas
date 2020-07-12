@@ -11,9 +11,9 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  Version 1.0.4 (2020-07-10)
+  Version 1.0.5 (2020-07-12)
 
-  Last change 2020-07-10
+  Last change 2020-07-12
 
   ©2018-2020 František Milt
 
@@ -39,7 +39,7 @@
   * StrRect      - github.com/TheLazyTomcat/Lib.StrRect
 
   StrRect is required only when dynamically linked zlib is used (see symbol
-  ZLib_Static for details).
+  ZLib_Static for details) and only on Windows OS.
 
 ===============================================================================}
 unit ZLibUtils;
@@ -59,7 +59,7 @@ unit ZLibUtils;
   
   Defined by default.
 }
-{$DEFINE ZLib_Static}
+{.$DEFINE ZLib_Static}
 
 interface
 
@@ -230,10 +230,15 @@ type
     fBuffer:              TMemoryBuffer;
     fTotalCompressed:     UInt64;
     fTotalUncompressed:   UInt64;
-    fOnProgressEvent:     TNotifyEvent;
-    fOnProgressCallback:  TNotifyCallback;
+    fTotalCounter:        UInt64;
+    fOnUpdateEvent:       TNotifyEvent;
+    fOnUpdateCallback:    TNotifyCallback;
+    fOnProgressEvent:     TFloatEvent;
+    fOnProgressCallback:  TFloatCallback;
     Function GetCompressionRatio: Double;
-    procedure DoProgress; virtual;
+    procedure DoUpdate; virtual;
+    procedure DoProgress(Progress: Double); overload; virtual;
+    procedure DoProgress; overload; virtual; abstract;
   public
     constructor Create;
     destructor Destroy; override;
@@ -241,9 +246,23 @@ type
     property TotalCompressed: UInt64 read fTotalCompressed;
     property TotalUncompressed: UInt64 read fTotalUncompressed;
     property CompressionRatio: Double read GetCompressionRatio;
-    property OnProgress: TNotifyEvent read fOnProgressEvent write fOnProgressEvent;
-    property OnProgressEvent: TNotifyEvent read fOnProgressEvent write fOnProgressEvent;
-    property OnProgressCallback: TNotifyCallback read fOnProgressCallBack write fOnProgressCallBack;
+  {
+    OnUpdate* is called everytime the TotalCompressed (decompression stream) or
+    TotalUncompressed (compression stream) is changed.
+  }
+    property OnUpdate: TNotifyEvent read fOnUpdateEvent write fOnUpdateEvent;
+    property OnUpdateEvent: TNotifyEvent read fOnUpdateEvent write fOnUpdateEvent;
+    property OnUpdateCallback: TNotifyCallback read fOnUpdateCallback write fOnUpdateCallback;
+  {
+    OnProgress* is called only when processing streams en-block, that is in
+    methods TZCompressionStream.CompressFrom and TZDecompressionStream.ExtractTo.
+
+    Note that TZDecompressionStream.ExtractTo can report wrong progress if the
+    source stream contains data beyond the end of compressed data.
+  }
+    property OnProgress: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
+    property OnProgressEvent: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
+    property OnProgressCallback: TFloatCallback read fOnProgressCallback write fOnProgressCallback;
   end;
 
 {-------------------------------------------------------------------------------
@@ -262,6 +281,7 @@ type
     fStrategy:          TZStrategy;
     fWindowBits:        int;
     fDestination:       TStream;
+    procedure DoProgress; overload; override;
   public
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; WindowBits: int); overload;
     constructor Create(Dest: TStream; CompressionLevel: TZCompressionLevel; MemLevel: TZMemLevel; Strategy: TZStrategy; StreamType: TZStreamType); overload;
@@ -294,6 +314,7 @@ type
   protected
     fWindowBits:  int;
     fSource:      TStream;
+    procedure DoProgress; overload; override;
   public
     constructor Create(Src: TStream; WindowBits: int); overload;
     constructor Create(Src: TStream; StreamType: TZStreamType = zstDefault); overload;
@@ -729,12 +750,22 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TZCustomStream.DoProgress;
+procedure TZCustomStream.DoUpdate;
+begin
+If Assigned(fOnUpdateEvent) then
+  fOnUpdateEvent(Self);
+If Assigned(fOnUpdateCallback) then
+  fOnUpdateCallback(Self);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TZCustomStream.DoProgress(Progress: Double);
 begin
 If Assigned(fOnProgressEvent) then
-  fOnProgressEvent(Self);
+  fOnProgressEvent(Self,Progress);
 If Assigned(fOnProgressCallback) then
-  fOnProgressCallback(Self);
+  fOnProgressCallback(Self,Progress);
 end;
 
 {-------------------------------------------------------------------------------
@@ -767,6 +798,18 @@ end;
 {===============================================================================
     TZCompressionStream - class implementation
 ===============================================================================}
+{-------------------------------------------------------------------------------
+    TZCompressionStream - protected methods
+-------------------------------------------------------------------------------}
+
+procedure TZCompressionStream.DoProgress;
+begin
+If fTotalCounter <> 0 then
+  DoProgress(fTotalUncompressed / fTotalCounter)
+else
+  DoProgress(0.0);
+end;
+
 {-------------------------------------------------------------------------------
     TZCompressionStream - public methods
 -------------------------------------------------------------------------------}
@@ -851,7 +894,7 @@ If Count > 0 then
       OutSize := BufferSize(fBuffer) - TMemSize(fZLibState.avail_out);
       Inc(fTotalCompressed,UInt64(OutSize));
       fDestination.WriteBuffer(BufferMemory(fBuffer)^,LongInt(OutSize));
-      DoProgress;
+      DoUpdate;
     until fZLibState.avail_in <= 0;
     Inc(fTotalUncompressed,UInt64(Count));
     Result := Count;
@@ -877,6 +920,8 @@ var
   BytesRead:  LongInt;
 begin
 Result := 0;
+fTotalCounter := UInt64(Source.Size);
+DoProgress(0.0);
 BufferInit(Buffer);
 BufferGet(Buffer,ZU_INTR_BUFFSIZE);
 try
@@ -884,9 +929,12 @@ try
     BytesRead := Source.Read(BufferMemory(Buffer)^,ZU_INTR_BUFFSIZE);
     WriteBuffer(BufferMemory(Buffer)^,BytesRead);
     Inc(Result,Int64(BytesRead));
+    DoProgress;
   until BytesRead < ZU_INTR_BUFFSIZE;
 finally
+  Final;
   BufferFree(Buffer);
+  DoProgress(1.0);
 end;
 end;
 
@@ -918,6 +966,18 @@ end;
 {===============================================================================
     TZDecompressionStream - class implementation
 ===============================================================================}
+{-------------------------------------------------------------------------------
+    TZDecompressionStream - protected methods
+-------------------------------------------------------------------------------}
+
+procedure TZDecompressionStream.DoProgress;
+begin
+If fTotalCounter <> 0 then
+  DoProgress(fTotalCompressed / fTotalCounter)
+else
+  DoProgress(0.0);
+end;
+
 {-------------------------------------------------------------------------------
     TZDecompressionStream - public methods
 -------------------------------------------------------------------------------}
@@ -989,7 +1049,7 @@ If Count > 0 then
         TransferOff := PtrUInt(ReadBytes) - PtrUInt(fZLibState.avail_in)
       else
         TransferOff := 0;
-      DoProgress;
+      DoUpdate;
     until (ResultCode = Z_STREAM_END) or (fZLibState.avail_out <= 0);
     If fZLibState.avail_in > 0 then
       fSource.Seek(-Int64(fZLibState.avail_in),soCurrent);    
@@ -1031,6 +1091,8 @@ var
   BytesRead:  LongInt;
 begin
 Result := 0;
+fTotalCounter := UInt64(fSource.Size);
+DoProgress(0.0);
 BufferInit(Buffer);
 BufferGet(Buffer,ZU_INTR_BUFFSIZE);
 try
@@ -1038,9 +1100,12 @@ try
     BytesRead := Read(BufferMemory(Buffer)^,ZU_INTR_BUFFSIZE);
     Destination.WriteBuffer(BufferMemory(Buffer)^,BytesRead);
     Inc(Result,Int64(BytesRead));
+    DoProgress;
   until BytesRead < ZU_INTR_BUFFSIZE;
 finally
+  Final;
   BufferFree(Buffer);
+  DoProgress(1.0);
 end;
 end;
 
