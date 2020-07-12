@@ -11,7 +11,7 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  Version 1.0.6 (2020-07-12)
+  Version 1.0.7 (2020-07-12)
 
   Last change 2020-07-12
 
@@ -327,6 +327,7 @@ type
     Function Read(var Buffer; Count: LongInt): LongInt; override;
     Function Write(const Buffer; Count: LongInt): LongInt; override;
     Function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    Function DecompressTo(Destination: TStream): Int64; virtual;
     Function ExtractTo(Destination: TStream): Int64; virtual;
     procedure Final; override;
     property WindowBits: int read fWindowBits;
@@ -1086,6 +1087,13 @@ else If (Origin = soBeginning) and (Offset = 0) and (fSource.Position = 0) then
   Result := 0
 else
   raise EZDecompressionError.Create('TZDecompressionStream.Seek: ' + ZInvalidOp);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TZDecompressionStream.DecompressTo(Destination: TStream): Int64;
+begin
+Result := ExtractTo(Destination);
 end;
 
 //------------------------------------------------------------------------------
