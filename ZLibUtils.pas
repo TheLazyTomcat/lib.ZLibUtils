@@ -13,7 +13,7 @@
 
   Version 1.0.7 (2020-07-12)
 
-  Last change 2020-07-12
+  Last change 2020-08-02
 
   ©2018-2020 František Milt
 
@@ -49,6 +49,7 @@ unit ZLibUtils;
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
 {$ENDIF}
+{$H+}
 
 {
   ZLib_Static
