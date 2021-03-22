@@ -11,11 +11,11 @@
 
     Utility classes for data (de)compression build on zlib library.
 
-  Version 1.0.7 (2020-07-12)
+  Version 1.0.8 (2021-03-22)
 
-  Last change 2020-08-02
+  Last change 2021-03-22
 
-  ©2018-2020 František Milt
+  ©2018-2021 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -36,10 +36,8 @@
     AuxClasses   - github.com/TheLazyTomcat/Lib.AuxClasses
     MemoryBuffer - github.com/TheLazyTomcat/Lib.MemoryBuffer
     ZLib         - github.com/TheLazyTomcat/Bnd.ZLib
-  * StrRect      - github.com/TheLazyTomcat/Lib.StrRect
-
-  StrRect is required only when dynamically linked zlib is used (see symbol
-  ZLib_Static for details) and only on Windows OS.
+    StrRect      - github.com/TheLazyTomcat/Lib.StrRect
+    DynLibUtils  - github.com/TheLazyTomcat/Lib.DynLibUtils
 
 ===============================================================================}
 unit ZLibUtils;
@@ -127,8 +125,11 @@ type
 
 type
   EZError = class(Exception)
+  protected
+    fErrorCode: int;
   public
     constructor ZCreate(ErrCode: int; ZStream: z_stream);
+    property ErrorCode: int read fErrorCode;
   end;
 
   EZCompressionError   = class(EZError);
@@ -443,6 +444,7 @@ type
 implementation
 
 uses
+  Math,
 {$IFDEF ZLib_Static}
   ZLibStatic;
 {$ELSE}
@@ -505,7 +507,8 @@ begin
 If Assigned(ZStream.msg) then
   CreateFmt('%s (%s)',[zError(ErrCode),ZStream.msg])
 else
-  CreateFmt('%s',[zError(ErrCode)])
+  CreateFmt('%s',[zError(ErrCode)]);
+fErrorCode := ErrCode;
 end;
 
 {-------------------------------------------------------------------------------
@@ -913,6 +916,14 @@ end;
 
 Function TZCompressionStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
 begin
+{
+  Since the source of uncompressed data is not controlled by this object, and
+  seeking is done on uncompressed data, an arbitrary seek is pretty much not
+  possible.
+  Only one combination is possible - we know how much uncompressed data was
+  written, and that is the current position, so seek into it is possible and
+  implemented.
+}
 If (Origin = soCurrent) and (Offset = 0) then
   Result := Int64(fTotalUncompressed)
 else
@@ -1081,13 +1092,105 @@ end;
 //------------------------------------------------------------------------------
 
 Function TZDecompressionStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+const
+  BuffSize = 1024 * 1024; // 1MiB
+var
+  Buffer:     Pointer;
+  OffTemp:    Int64;
+  ReadBytes:  LongInt;
 begin
-If (Origin = soCurrent) and (Offset = 0) then
-  Result := fSource.Position
-else If (Origin = soBeginning) and (Offset = 0) and (fSource.Position = 0) then
-  Result := 0
+{
+  Note that seeking is done on uncompressed data, not directly on source, which
+  is compressed, so there must be some processing done.
+}
+case Origin of
+  soBeginning:
+    If Offset <= 0 then
+      begin
+      {
+        Seek to the beginning - reset zlib state and counters, seek to the
+        beginning of source stream.
+      }
+        DecompressionErrCheck(inflateReset(@fZLibState),fZLibState);
+        fTotalCompressed := 0;
+        fTotalUncompressed := 0;
+        Result := fSource.Seek(0,soBeginning);
+      end
+    else
+      begin
+        // Seek to an arbitrary offset from the beginning.
+        If Offset = Int64(fTotalUncompressed) then
+          Result := Int64(fTotalUncompressed) // current position
+        else If Offset > Int64(fTotalUncompressed) then
+          Result := Seek(Offset - Int64(fTotalUncompressed),soCurrent)
+        else
+          begin
+          {
+            Offset is smaller than uncompressed counter - reset to the start
+            and then read until we are at the requested position.
+          }
+            Seek(0,soBeginning);
+            Result := Seek(Offset,soCurrent);
+          end;
+      end;
+
+  soCurrent:
+    If Offset = 0 then
+      begin
+        // Seek to current position - just return uncompresed data counter.
+        Result := Int64(fTotalUncompressed);
+      end
+    else
+      begin
+        // Seek to an arbitrary offset from current position.
+        If (Int64(fTotalUncompressed) + Offset) <= 0 then
+          Result := Seek(0,soBeginning)
+        else If Offset < 0 then
+          Result := Seek(Int64(fTotalUncompressed) + Offset,soBeginning)
+        else
+          begin
+          {
+            Offset is larger than zero, read (decompress) data until the
+            decompressed counter reaches the requested offset or we are at the
+            end.
+          }
+            GetMem(Buffer,BuffSize);
+            try
+              OffTemp := Offset;
+              while OffTemp > 0 do begin
+                ReadBytes := Read(Buffer^,Min(BuffSize,OffTemp));
+                If ReadBytes >= Min(BuffSize,OffTemp) then
+                  Dec(OffTemp,ReadBytes)
+                else
+                  OffTemp := 0;
+              end;
+              Result := Int64(fTotalUncompressed);
+            finally
+              FreeMem(Buffer,BuffSize);
+            end;
+          end;
+      end;
+
+  soEnd:
+    If Offset = 0 then
+      begin
+      {
+        Seek to the end - do read until there are no more compressed data to be
+        read while discarding all decompressed data.
+      }
+        GetMem(Buffer,BuffSize);
+        try
+          while Read(Buffer^,BuffSize) > 0 do;
+          Result := Int64(fTotalUncompressed);
+        finally
+          FreeMem(Buffer,BuffSize);
+        end;
+      end
+    else raise EZDecompressionError.Create('TZDecompressionStream.Seek: ' + ZInvalidOp);
+    
 else
   raise EZDecompressionError.Create('TZDecompressionStream.Seek: ' + ZInvalidOp);
+end;
 end;
 
 //------------------------------------------------------------------------------
