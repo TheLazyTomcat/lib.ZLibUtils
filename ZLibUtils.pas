@@ -13,7 +13,7 @@
 
   Version 1.0.8 (2021-03-22)
 
-  Last change 2021-03-22
+  Last change 2021-11-07
 
   ©2018-2021 František Milt
 
@@ -32,12 +32,15 @@
       github.com/TheLazyTomcat/Lib.ZLibUtils
 
   Dependencies:
-    AuxTypes     - github.com/TheLazyTomcat/Lib.AuxTypes
-    AuxClasses   - github.com/TheLazyTomcat/Lib.AuxClasses
-    MemoryBuffer - github.com/TheLazyTomcat/Lib.MemoryBuffer
-    ZLib         - github.com/TheLazyTomcat/Bnd.ZLib
-    StrRect      - github.com/TheLazyTomcat/Lib.StrRect
-    DynLibUtils  - github.com/TheLazyTomcat/Lib.DynLibUtils
+    AuxTypes       - github.com/TheLazyTomcat/Lib.AuxTypes
+    AuxClasses     - github.com/TheLazyTomcat/Lib.AuxClasses
+    MemoryBuffer   - github.com/TheLazyTomcat/Lib.MemoryBuffer
+    ZLib           - github.com/TheLazyTomcat/Bnd.ZLib
+    StrRect        - github.com/TheLazyTomcat/Lib.StrRect
+    DynLibUtils    - github.com/TheLazyTomcat/Lib.DynLibUtils
+  * WindowsVersion - github.com/TheLazyTomcat/Lib.WindowsVersion
+
+  Library WindowsVersion is only needed when compiling for Windows OS.
 
 ===============================================================================}
 unit ZLibUtils;
