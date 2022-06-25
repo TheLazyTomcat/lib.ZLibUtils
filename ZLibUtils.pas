@@ -13,9 +13,9 @@
 
   Version 1.0.8 (2021-03-22)
 
-  Last change 2021-11-07
+  Last change 2022-06-25
 
-  ©2018-2021 František Milt
+  ©2018-2022 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -60,8 +60,14 @@ unit ZLibUtils;
   library initialization and finalization is done automatically.
   
   Defined by default.
+
+  To disable/undefine this symbol in a project without changing this library,
+  define project-wide symbol ZLibUtils_ZLib_Static_Off.
 }
 {$DEFINE ZLib_Static}
+{$IFDEF ZLibUtils_ZLib_Static_Off}
+  {$UNDEF ZLib_Static}
+{$ENDIF}        
 
 interface
 
