@@ -13,7 +13,7 @@
 
   Version 1.0.8 (2021-03-22)
 
-  Last change 2022-06-25
+  Last change 2022-09-14
 
   ©2018-2022 František Milt
 
@@ -547,8 +547,8 @@ begin
 If OutSize > 0 then
   begin
     If Assigned(fOnOutputEvent) then
-      fOnOutputEvent(Self,BufferMemory(fOutBuffer)^,OutSize);
-    If Assigned(fOnOutputCallback) then
+      fOnOutputEvent(Self,BufferMemory(fOutBuffer)^,OutSize)
+    else If Assigned(fOnOutputCallback) then
       fOnOutputCallback(Self,BufferMemory(fOutBuffer)^,OutSize);
   end;
 end;
@@ -772,8 +772,8 @@ end;
 procedure TZCustomStream.DoUpdate;
 begin
 If Assigned(fOnUpdateEvent) then
-  fOnUpdateEvent(Self);
-If Assigned(fOnUpdateCallback) then
+  fOnUpdateEvent(Self)
+else If Assigned(fOnUpdateCallback) then
   fOnUpdateCallback(Self);
 end;
 
@@ -782,8 +782,8 @@ end;
 procedure TZCustomStream.DoProgress(Progress: Double);
 begin
 If Assigned(fOnProgressEvent) then
-  fOnProgressEvent(Self,Progress);
-If Assigned(fOnProgressCallback) then
+  fOnProgressEvent(Self,Progress)
+else If Assigned(fOnProgressCallback) then
   fOnProgressCallback(Self,Progress);
 end;
 
@@ -1340,8 +1340,8 @@ If BufferSize(fSource) <> 0 then
 else
   Progress := 0.0;
 If Assigned(fOnProgressEvent) then
-  fOnProgressEvent(Self,Progress);
-If Assigned(fOnProgressCallback) then
+  fOnProgressEvent(Self,Progress)
+else If Assigned(fOnProgressCallback) then
   fOnProgressCallback(Self,Progress);
 end;
 
@@ -1493,8 +1493,8 @@ If BufferSize(fSource) <> 0 then
 else
   Progress := 0.0;
 If Assigned(fOnProgressEvent) then
-  fOnProgressEvent(Self,Progress);
-If Assigned(fOnProgressCallback) then
+  fOnProgressEvent(Self,Progress)
+else If Assigned(fOnProgressCallback) then
   fOnProgressCallback(Self,Progress);
 end;
 
