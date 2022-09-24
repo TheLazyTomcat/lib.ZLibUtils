@@ -13,7 +13,7 @@
 
   Version 1.0.8 (2021-03-22)
 
-  Last change 2022-09-14
+  Last change 2022-09-24
 
   ©2018-2022 František Milt
 
@@ -38,6 +38,7 @@
     ZLib           - github.com/TheLazyTomcat/Bnd.ZLib
     StrRect        - github.com/TheLazyTomcat/Lib.StrRect
     DynLibUtils    - github.com/TheLazyTomcat/Lib.DynLibUtils
+    SimpleCPUID    - github.com/TheLazyTomcat/Lib.SimpleCPUID
   * WindowsVersion - github.com/TheLazyTomcat/Lib.WindowsVersion
 
   Library WindowsVersion is only needed when compiling for Windows OS.
@@ -46,7 +47,8 @@
 unit ZLibUtils;
 
 {$IFDEF FPC}
-  {$MODE Delphi}
+  {$MODE ObjFPC}
+  {$MODESWITCH ClassicProcVars+}
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
 {$ENDIF}
